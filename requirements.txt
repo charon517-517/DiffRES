@@ -1,0 +1,13 @@
+torch
+torchvision
+transformers
+diffusers
+accelerate
+omegaconf
+hydra-core
+wandb
+termcolor
+tqdm
+pillow
+numpy
+opencv-python
