@@ -135,12 +135,7 @@ def main_worker(
     vae_image = GeneralVAEImage.from_pretrained(pretrained_model_path, subfolder="vae", cache_dir=cache_dir)
     # vae_image.decoder = nn.Identity()  # remove the decoder
     vae_image.set_scaling_factor(p['image_scaling_factor'])
-    if p['vae_model_kwargs']['skip_encoder']:
-        vae_semseg = SkipVAESeg()
-    else:
-        if p['shared_vae_encoder']:
-            semseg_vae_encoder = torch.nn.Sequential(vae_image.encoder, vae_image.quant_conv)  # NOTE: deepcopy is safer
-        vae_semseg = GeneralVAESeg(**p['vae_model_kwargs'], encoder=semseg_vae_encoder)
+    vae_semseg = SkipVAESeg()
     print(f"Scaling factors: image {vae_image.scaling_factor}, semseg {vae_semseg.scaling_factor}")
 
     # load the pretrained UNet model

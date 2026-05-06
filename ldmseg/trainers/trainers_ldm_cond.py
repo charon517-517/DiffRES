@@ -466,12 +466,8 @@ class TrainerDiffusion(DatasetBase):
         if weight_dtype is None:
             weight_dtype = self.weight_dtype
 
-        # Fast-path for training-time mIoU computation: sometimes pred_latents is already a 1-channel mask logit
-        # (instead of VAE latents). In that case, avoid VAE decode and convert to a 2-class logit tensor.
-        if return_logits and hasattr(latents, 'shape') and latents.shape[1] == 1:
-            # turn 1-channel logit into 2-class logits: background vs foreground
-            return torch.cat([-latents, latents], dim=1).float()
-
+        # Always decode through the segmentation VAE. For SkipVAESeg this converts
+        # a 1-channel mask probability to 2-class scores as [1 - p, p].
         latents = latents * (1. / self.vae_semseg.scaling_factor)
         images = self.vae_semseg.decode(latents.to(weight_dtype))
         images = images.float()
