@@ -8,6 +8,7 @@ dist/
 *.egg-info/
 
 outputs/
+visualizations/
 *.log
 
 *.ckpt

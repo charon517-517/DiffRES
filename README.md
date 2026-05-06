@@ -2,8 +2,6 @@
 
 Official code release for **DiffRES: Unleashing Text-to-Image Diffusion Models for Generative Referring Expression Segmentation without Information Leakage**.
 
-This repository is a **cleaned & minimal** version extracted from our internal codebase. It keeps only the core components for **training / evaluation / inference**.
-
 ## Features
 - Stable Diffusion v1.5 backbone for generative referring expression segmentation (RES).
 - **One-step mask generation** (no iterative denoising at inference).
@@ -65,6 +63,9 @@ bash scripts/eval_refcoco.sh $CKPT
 - `configs/`: configs
 - `ldmseg/`: core code (model/trainer/dataset/utils)
 - `scripts/`: runnable scripts
+
+## TODO
+- Release weights.
 
 ## License
 TBD
