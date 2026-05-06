@@ -5,68 +5,6 @@ from typing import List, Tuple, Optional, Callable, Set
 import copy
 from collections import defaultdict
 
-def get_optim_clip(
-    model: torch.nn.Module,
-    base_lr: float = 0.0001,
-    weight_decay: float = 0.0,
-    weight_decay_norm: float = 0.0,
-    betas: Tuple = (0.9, 0.999),
-    lr_factor_func: Optional[Callable] = None,
-    zero_redundancy: bool = False,
-    verbose: bool = True,
-    save_optim: Optional[bool] = None,
-) -> Tuple[torch.optim.Optimizer, bool]:
-
-    ret = get_optimizer_params(
-        model, weight_decay=None, weight_decay_norm=weight_decay_norm, base_lr=base_lr,
-        lr_factor_func=lr_factor_func,
-        overrides={'.learnable_embedding': {'lr': 0.00001, 'weight_decay':0.05}},
-        verbose=verbose,
-    )
-    if zero_redundancy:
-        from torch.distributed.optim import ZeroRedundancyOptimizer
-
-        optim = ZeroRedundancyOptimizer(
-            ret, optimizer_class=torch.optim.AdamW,
-            lr=base_lr, weight_decay=weight_decay, betas=betas, eps=1e-4
-        )
-        save_optim = False if save_optim is None else save_optim
-    else:
-        optim = torch.optim.AdamW(ret, lr=base_lr, weight_decay=weight_decay, betas=betas)
-        save_optim = True if save_optim is None else save_optim
-    return optim, save_optim
-
-
-def get_optim_bert(
-    model: torch.nn.Module,
-    base_lr: float = 0.0001,
-    weight_decay: float = 0.0,
-    weight_decay_norm: float = 0.0,
-    betas: Tuple = (0.9, 0.999),
-    lr_factor_func: Optional[Callable] = None,
-    zero_redundancy: bool = False,
-    verbose: bool = True,
-    save_optim: Optional[bool] = None,
-) -> Tuple[torch.optim.Optimizer, bool]:
-
-    ret = get_optimizer_params(
-        model, weight_decay=None, weight_decay_norm=weight_decay_norm, base_lr=base_lr,
-        lr_factor_func=lr_factor_func,
-        verbose=verbose,
-    )
-    if zero_redundancy:
-        from torch.distributed.optim import ZeroRedundancyOptimizer
-
-        optim = ZeroRedundancyOptimizer(
-            ret, optimizer_class=torch.optim.AdamW,
-            lr=base_lr, weight_decay=weight_decay, betas=betas, eps=1e-4
-        )
-        save_optim = False if save_optim is None else save_optim
-    else:
-        optim = torch.optim.AdamW(ret, lr=base_lr, weight_decay=weight_decay, betas=betas)
-        save_optim = True if save_optim is None else save_optim
-    return optim, save_optim
-
 def get_optim(
     model: torch.nn.Module,
     base_lr: float = 0.0001,

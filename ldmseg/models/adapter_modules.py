@@ -16,22 +16,6 @@ except Exception:
 from diffusers.models.attention import BasicTransformerBlock
 
 
-class CLIPBertFuse(nn.Module):
-    def __init__(self) -> None:
-        super().__init__()
-        self.clip_self_attn = SelfAttnBlock(dim=768, num_heads=8)
-        self.bert_self_attn = SelfAttnBlock(dim=768, num_heads=8)
-        self.cross_attn = CrossAttention(query_dim=768, cross_attention_dim=768)
-        self.cross_norm = nn.LayerNorm(768)
-        self.ffn = Mlp(in_features=768, hidden_features=3072)
-        self.ffn_norm = nn.LayerNorm(768)
-    def forward(self, clip_feat, bert_feat):
-        clip_feat = self.clip_self_attn(clip_feat)
-        bert_feat = self.bert_self_attn(bert_feat)
-        fused_feat = self.cross_norm(self.cross_attn(hidden_states=clip_feat, context=bert_feat) + bert_feat)
-        fused_feat = self.ffn_norm(self.ffn(fused_feat) + fused_feat)
-        return fused_feat
-
 class Mlp(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0., linear=False):
         super().__init__()

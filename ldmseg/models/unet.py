@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from typing import Tuple, Optional, Union, Dict, Any, Iterable
 from ldmseg.utils import OutputDict
-from ldmseg.models.adapter_modules import SelfAttnBlock, SelfCrossAttnBlock, CrossAttnBlock, CLIPBertFuse
+from ldmseg.models.adapter_modules import SelfAttnBlock, SelfCrossAttnBlock, CrossAttnBlock
 try:
     from diffusers import UNet2DConditionModel
     from diffusers.training_utils import EMAModel
@@ -153,16 +153,8 @@ class UNet(UNet2DConditionModel):
             self.text_adapter = SelfCrossAttnAdapter(text_dim=text_adapter_dim)
         elif adapter_type == 'crossattn':
             self.text_adapter = CrossAttnBlock(text_dim=text_adapter_dim)
-        elif adapter_type == 'clipbertfuse':
-            self.text_adapter = CLIPBertFuse()
         else:
             raise NotImplementedError("Not implemented text adapter")
-
-    def add_bert_adapter(self):
-        self.bert_adapter = BertAdapter(in_dim=1536, out_dim=768)
-
-    def add_bert_ratio_generator(self):
-        self.ratio_gen = RatioGenerator()
 
     def modify_encoder(
         self,
@@ -392,7 +384,6 @@ class UNet(UNet2DConditionModel):
         return_dict: bool = True,
         timestep_img: Optional[Union[torch.Tensor, float, int]] = None,
         dino_feat=None,
-        bert_embeddings=None
     ) -> Union[UNetOutput, Tuple]:
         # Taken from diffusers library with additional changes to handle segmentation and rgb data
 
@@ -417,13 +408,6 @@ class UNet(UNet2DConditionModel):
             t_emb_img = t_emb_img.to(dtype=self.dtype)
             emb_img = self.time_embedding(t_emb_img, timestep_cond)
 
-        if hasattr(self, 'bert_adapter'):
-            assert bert_embeddings is not None
-            encoder_hidden_states = self.bert_adapter(encoder_hidden_states, bert_embeddings)
-        if hasattr(self, 'ratio_gen'):
-            assert bert_embeddings is not None
-            encoder_hidden_states = self.ratio_gen(bert_embeddings, encoder_hidden_states)
-        
         # (optional) text adapter for text conditioning
         if hasattr(self, 'text_adapter'):
             _adaper_type = type(self.text_adapter).__name__
@@ -431,9 +415,6 @@ class UNet(UNet2DConditionModel):
                 encoder_hidden_states = self.text_adapter(encoder_hidden_states, sample[:, 4:8, :, :])
             elif _adaper_type == 'SelfAttnAdapter':
                 encoder_hidden_states = self.text_adapter(encoder_hidden_states)
-            elif _adaper_type == "CLIPBertFuse":
-                assert bert_embeddings is not None
-                encoder_hidden_states = self.text_adapter(encoder_hidden_states, bert_embeddings)
             else:
                 raise NotImplementedError("not implemented text adapter")
         
@@ -643,36 +624,6 @@ class TextAdapter(nn.Module):
         texts_after = self.fc(texts)
         texts = texts + self.gamma * texts_after
         return texts
-
-class BertAdapter(nn.Module):
-    def __init__(self, in_dim=768, out_dim=768):
-        super().__init__()
-        self.gamma = nn.Parameter(torch.ones(out_dim) * 1e-4)
-        self.fc = nn.Sequential(
-            nn.Linear(in_dim, out_dim),
-            nn.GELU(),
-            nn.Linear(out_dim, out_dim)
-        )
-
-    def forward(self, clip_feat, bert_feat):
-        texts = torch.cat([clip_feat, bert_feat], dim=2)
-        texts = self.fc(texts)
-        texts = clip_feat + self.gamma * texts
-        return texts
-    
-    
-class RatioGenerator(nn.Module):
-    def __init__(self) -> None:
-        super().__init__()
-        self.fc = nn.Sequential(
-            nn.Linear(768, 384),
-            nn.GELU(),
-            nn.Linear(384, 1),
-        )
-    def forward(self, bert_feat, clip_feat):
-        ratio = self.fc(bert_feat).sigmoid() # b 77 768 -> b 77 1
-        clip_feat = clip_feat + ratio * clip_feat
-        return clip_feat
 
 class SelfAttnAdapter(nn.Module):
     def __init__(self, text_dim=768) -> None:

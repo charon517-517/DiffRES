@@ -184,8 +184,6 @@ def main_worker(
         unet.add_dino_condition_adapter()
         # unet.add_dino_fuse_attn()
         # del unet.conv_out
-    if p['use_bert']:
-        unet.add_bert_ratio_generator()
 
     # define weight dtype
     assert train_params['weight_dtype'] in ['float32', 'float16']

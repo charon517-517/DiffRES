@@ -16,8 +16,6 @@ visualizations/
 *.pt
 *.safetensors
 
-data/
-refer_data/
 
 .vscode/
 .idea/

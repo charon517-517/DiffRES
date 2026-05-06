@@ -20,7 +20,7 @@ pip install -r requirements.txt
 
 ## Prepare assets
 ### 1) Stable Diffusion v1.5
-Set `base.pretrained_model_path` (default in `configs/base/base.yaml`). Example path used on our server:
+Set `base.pretrained_model_path` in `configs/base/base.yaml` to your own local Stable Diffusion v1.5 weights path. The default value is only an example path used on our server:
 
 - `/root/autodl-fs/weights/stable-diffusion-v1-5`
 

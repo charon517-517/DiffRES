@@ -39,7 +39,6 @@ vae_model_kwargs:
 # Model
 backbone: unet
 use_dino: False
-use_bert: False
 model_kwargs:
    in_channels: 8
    init_mode_seg: copy

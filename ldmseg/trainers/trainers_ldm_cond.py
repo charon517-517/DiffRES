@@ -48,7 +48,7 @@ except Exception:  # torchvision is optional
         else:
             raise ValueError("Unsupported tensor shape for save_image")
 
-from .optim import get_optim_unet, get_optim_clip, get_optim_bert
+from .optim import get_optim_unet
 from ldmseg.data.dataset_base import DatasetBase
 from ldmseg.utils import (
     AverageMeter, ProgressMeter, OutputDict,
@@ -57,7 +57,7 @@ from ldmseg.utils import (
     get_imagenet_stats, get_world_size
 )
 from ldmseg.models.autoencoder import AutoEncoder
-from transformers import Dinov2Backbone, AutoModel, BertTokenizer, BertModel
+from transformers import AutoModel
 try:
     import cv2  # type: ignore
 except Exception:
@@ -204,32 +204,15 @@ class TrainerDiffusion(DatasetBase):
         assert (self.self_condition and p['model_kwargs']['cond_channels']==4) or (not self.self_condition and p['model_kwargs']['cond_channels']==0)
         self.num_inference_steps = self.sampling_kwargs['num_inference_steps']
         self.one_step = p['train_kwargs']['one_step']
-        self.soft_prompt = p['train_kwargs']['image_descriptors'] == 'sp_clip'
         self.no_noise_input = p['train_kwargs']['no_noise_input']
         self.use_dino = p['use_dino']
-        self.use_bert = p['use_bert']
         self.best_iou = -1
         
         if self.use_dino:
             print("use dino feature as unet input")
-            # self.dino_backbone = Dinov2Backbone.from_pretrained("/root/autodl-fs/weights/dinov2-base").to(device=self.unet_model.module.device, dtype=self.unet_model.module.dtype)
             self.dino_backbone = AutoModel.from_pretrained("/root/autodl-fs/weights/dinov2-base").to(device=self.unet_model.module.device, dtype=self.unet_model.module.dtype)
             self.dino_backbone.requires_grad_(False)
             self.dino_backbone.eval()
-            
-            
-        if self.use_bert:
-            print("use bert for text conditioning")
-            self.bert_tokenizer = BertTokenizer.from_pretrained("/root/autodl-fs/weights/bert-base-uncased")
-            self.bert_model = BertModel.from_pretrained("/root/autodl-fs/weights/bert-base-uncased", add_pooling_layer=False).to(device=self.unet_model.module.device, dtype=self.unet_model.module.dtype)
-            self.bert_model.requires_grad_(True)
-            self.bert_model.train()
-            self.bert_model = torch.nn.parallel.DistributedDataParallel(
-            self.bert_model, device_ids=[args['gpu']],
-                find_unused_parameters=p['train_kwargs']['find_unused_parameters'],
-                gradient_as_bucket_view=p['train_kwargs']['gradient_as_bucket_view'],
-            )
-            
 
         # optimizer
         if isinstance(self.unet_model, nn.parallel.DistributedDataParallel):
@@ -252,34 +235,7 @@ class TrainerDiffusion(DatasetBase):
             save_optim=p['optimizer_save_optim'],            # save optimizer state or not
             verbose=True,                                   # print all parameters if true
         )
-        if self.use_bert:
-            self.bert_opt, self.bert_save_optim = get_optim_bert(
-                self.bert_model,
-                base_lr=p['optimizer_kwargs']['lr']*0.1,
-                weight_decay=p['optimizer_kwargs']['weight_decay'],
-                weight_decay_norm=p['optimizer_kwargs']['weight_decay_norm'],
-                betas=p['optimizer_kwargs']['betas'],            # adam beta1, beta2
-                lr_factor_func=lr_factor_func,                   # lr decay for backbone
-                zero_redundancy=p['optimizer_zero_redundancy'],  # zero redundancy in optim in DDP
-                save_optim=p['optimizer_save_optim'],            # save optimizer state or not
-                verbose=True,                                   # print all parameters if true
-            )
         self.lr = self.opt.param_groups[0]['lr']
-        # soft prompt
-        if self.soft_prompt:
-            for name, params in self.textencoder.named_modules():
-                params.requires_grad_(True)
-            self.clip_opt, self.save_clip_optim = get_optim_clip(
-                self.textencoder,
-                base_lr=0.0,
-                weight_decay=p['optimizer_kwargs']['weight_decay'],
-                weight_decay_norm=p['optimizer_kwargs']['weight_decay_norm'],
-                betas=p['optimizer_kwargs']['betas'],            # adam beta1, beta2
-                lr_factor_func=None,                   # lr decay for backbone
-                zero_redundancy=p['optimizer_zero_redundancy'],  # zero redundancy in optim in DDP
-                save_optim=p['optimizer_save_optim'],            # save optimizer state or not
-                verbose=True,   
-            )
         # cudnn / cuda
         cudnn.benchmark = cudnn_on
         torch.backends.cuda.matmul.allow_tf32 = p['train_kwargs']['allow_tf32']
@@ -413,31 +369,6 @@ class TrainerDiffusion(DatasetBase):
         data = self.construct_save_dict(epoch)
         torch.save(data, str(self.results_folder / f'best_model.pt'))
        
-    def update_clip_weights(self, parameters: Iterable[torch.nn.Parameter]) -> None:
-        """ Update weights after clipping gradients
-        """
-        if self.clip_grad > 0:
-            clip_grad_norm_(parameters, self.clip_grad, norm_type=2)
-        self.clip_opt.step()
-
-    def update_clip_scheduler(self, batch_idx: int) -> None:
-        """ Update learning rate scheduler
-        """
-        if self.lr_scheduler is not None:
-            for param_group in self.clip_opt.param_groups:
-                param_group["lr"] = self.lr_scheduler[self.step]
-            if batch_idx + 1 == self.gradient_accumulate_every:
-                print(f"Learning rate is set to: {self.clip_opt.param_groups[0]['lr']:.3e}")
-
-    def update_bert_scheduler(self, batch_idx: int) -> None:
-        """ Update learning rate scheduler
-        """
-        if self.lr_scheduler is not None:
-            for param_group in self.bert_opt.param_groups:
-                param_group["lr"] = self.lr_scheduler[self.step]
-            if batch_idx + 1 == self.gradient_accumulate_every:
-                print(f"Learning rate is set to: {self.bert_opt.param_groups[0]['lr']:.3e}")
-
     def encode_seg(self, semseg, cmap=None):
         # we will encode the semseg map with a fixed color map
         if cmap is None:
@@ -662,7 +593,6 @@ class TrainerDiffusion(DatasetBase):
         condition: Optional[torch.Tensor] = None,
         data=None,
         rgb_imgs=None,
-        bert_embedding=None
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
 
         """
@@ -729,7 +659,7 @@ class TrainerDiffusion(DatasetBase):
         else:
             dino_feat = None
         
-        prediction = self.unet_model(inputs, timesteps, encoder_hidden_states, timestep_img=timesteps_img, dino_feat=dino_feat, bert_embeddings=bert_embedding).sample
+        prediction = self.unet_model(inputs, timesteps, encoder_hidden_states, timestep_img=timesteps_img, dino_feat=dino_feat).sample
 
         # 3. minimize MSE loss between the added noise and the predicted noise
         loss = self.loss_fn(prediction.float(), target.float(), reduction='none', mask=loss_mask)
@@ -965,20 +895,6 @@ class TrainerDiffusion(DatasetBase):
             self.fp16_scaler.step(self.opt)
             self.fp16_scaler.update()
     
-    def update_bert_weights(self, parameters: Iterable[torch.nn.Parameter]) -> None:
-        """ Update weights after clipping gradients
-        """
-        if self.fp16_scaler is None:
-            if self.clip_grad > 0:
-                clip_grad_norm_(parameters, self.clip_grad, norm_type=2)
-            self.bert_opt.step()
-        else:
-            if self.clip_grad > 0:
-                self.fp16_scaler.unscale_(self.bert_opt)  # unscale the gradients in-place
-                clip_grad_norm_(parameters, self.clip_grad, norm_type=2)
-            self.fp16_scaler.step(self.bert_opt)
-            self.fp16_scaler.update()
-
     def update_scheduler(self, batch_idx: int) -> None:
         """ Update learning rate scheduler
         """
@@ -1014,12 +930,6 @@ class TrainerDiffusion(DatasetBase):
 
             # process inputs
             model_inputs = self.process_inputs(data)
-            if self.use_bert:
-                bert_tokens = self.bert_tokenizer(text=model_inputs.text, truncation=True, max_length=77, return_length=True,
-                                    return_overflowing_tokens=False, padding="max_length", return_tensors="pt").input_ids.to(self.bert_model.device)
-                bert_embeddings = self.bert_model(bert_tokens, return_dict=True)['last_hidden_state']
-            else:
-                bert_embeddings = None
             # mask = Image.fromarray(255*data['semseg'][0].cpu().numpy().astype(np.uint8))
             # mask.save(f"{data['text'][0]}.jpg")
             # add noise to the latents according to the noise magnitude at each timestep
@@ -1069,7 +979,6 @@ class TrainerDiffusion(DatasetBase):
                     condition=condition,
                     data=data,
                     rgb_imgs=model_inputs.rgb_images,
-                    bert_embedding=bert_embeddings
                 )
                 loss = loss / self.gradient_accumulate_every
                 total_loss += loss.detach()
@@ -1113,14 +1022,6 @@ class TrainerDiffusion(DatasetBase):
             self.update_scheduler(batch_idx)
             self.update_weights(self.unet_model.parameters())
             self.opt.zero_grad()
-            if self.soft_prompt:
-                self.update_clip_scheduler(batch_idx)
-                self.update_clip_weights(self.textencoder.parameters())
-                self.clip_opt.zero_grad()
-            if self.use_bert:
-                self.update_bert_scheduler(batch_idx)
-                self.update_bert_weights(self.bert_model.parameters())
-                self.bert_opt.zero_grad()
             dist.barrier()
 
             # update meters
@@ -1260,12 +1161,6 @@ class TrainerDiffusion(DatasetBase):
                                         truncation=True, return_tensors="pt")
             text_embeddings = self.textencoder(text_input.input_ids.to(device=self.args['gpu']))[0]
             encoder_hidden_states = text_embeddings.to(torch.float)
-        if self.use_bert:
-            bert_tokens = self.bert_tokenizer(prompts, truncation=True, max_length=77, return_length=True,
-                                        return_overflowing_tokens=False, padding="max_length", return_tensors="pt").input_ids.to(device=self.args['gpu'])
-            bert_embeddings = self.bert_model(bert_tokens)['last_hidden_state']
-        else:
-            bert_embeddings = None
         
         # (warning) we dont use self-condition here
         condition = torch.zeros_like(rgb_latents)
@@ -1293,7 +1188,7 @@ class TrainerDiffusion(DatasetBase):
         else:
             dino_feat = None
         with torch.autocast('cuda', enabled=self.fp16_scaler is not None):
-            mask_latent_pred = self.unet_model(inputs, torch.tensor(999, dtype=torch.long, device=inputs.device), encoder_hidden_states=encoder_hidden_states, dino_feat=dino_feat, bert_embeddings=bert_embeddings)
+            mask_latent_pred = self.unet_model(inputs, torch.tensor(999, dtype=torch.long, device=inputs.device), encoder_hidden_states=encoder_hidden_states, dino_feat=dino_feat)
             origin_latent = mask_latent_pred.latent
             mask_latent_pred = mask_latent_pred.sample
             # mask_latent_pred = self.vae_image.decode(mask_latent_pred).sample.mean(1, keepdim=True).sigmoid()
