@@ -73,7 +73,7 @@ train_kwargs:
    type_mask: ignore
    latent_mask: False
    encoding_mode: bits
-   image_descriptors: remove
+   image_descriptors: none
    caption_type: none
    caption_dropout: 1.0  # always drop captions by default
    prob_train_on_pred: 0.0
