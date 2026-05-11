@@ -79,10 +79,6 @@ def get_image_descriptor_model(descriptor_name, pretrained_model_path, unet):
     elif descriptor_name == 'learnable':
         unet.define_learnable_embeddings(128, 768)
         print(f'Successfully added learnable object queries to unet as {unet.object_queries}')
-
-    elif descriptor_name == 'remove':
-        unet.remove_cross_attention()
-        print('Successfully removed cross attention layers from unet')
     else:
         assert descriptor_name == 'none'
         # load the pretrained CLIP model
